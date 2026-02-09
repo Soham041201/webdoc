@@ -32,22 +32,9 @@ export class UIObserver {
       }, true);
     });
 
-    // Monitor clicks via page evaluation
-    this.page.on("click", async () => {
-      const clickInfo = await this.page!.evaluate(() => {
-        return (window as any).__lastClick || null;
-      });
-
-      if (clickInfo) {
-        const label =
-          clickInfo.text ||
-          clickInfo.ariaLabel ||
-          clickInfo.title ||
-          `${clickInfo.tagName} element` ||
-          "Unknown element";
-        this.agent.emit({ type: "ui_action", label, action: "click" });
-      }
-    });
+    // Note: Click tracking is handled via the injected listener above.
+    // The click info is stored in window.__lastClick and can be retrieved
+    // via page.evaluate() when needed.
   }
 
 
