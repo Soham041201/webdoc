@@ -1,0 +1,52 @@
+{
+  "name": "webdoc-agent",
+  "version": "0.1.0",
+  "description": "Human-in-the-loop API documentation agent for web applications",
+  "type": "module",
+  "main": "src/index.tsx",
+  "bin": {
+    "webdoc": "./src/index.tsx"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/index.tsx",
+    "build": "bun build src/index.tsx --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run typecheck"
+  },
+  "keywords": [
+    "api-documentation",
+    "playwright",
+    "cli",
+    "automation",
+    "openapi",
+    "webdoc",
+    "documentation-generator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "files": [
+    "src/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Soham041201/webdoc.git"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "ink": "^4.4.1",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "playwright": "^1.48.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
