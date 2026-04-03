@@ -6,14 +6,14 @@
 
 import React from "react";
 import { render } from "ink";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve, isAbsolute } from "node:path";
 import { Agent } from "./agent/Agent.js";
 import type { AgentEvent } from "./agent/Events.js";
 import { BrowserController } from "./browser/playwright.js";
 import type { CapturedCall } from "./browser/networkRecorder.js";
 import { App } from "./cli/App.js";
-import { exportToMarkdown } from "./export/markdown.js";
+import { exportCallsToMarkdown, exportToMarkdown } from "./export/markdown.js";
 import { exportCallsToOpenAPI, type DocMetadata } from "./export/openapi.js";
 import { GeminiClient } from "./llm/gemini.js";
 
@@ -57,8 +57,8 @@ For more information, visit: https://github.com/Soham041201/webdoc
 async function showVersion() {
   // Bun can read package.json directly
   try {
-    const pkg = Bun.file("package.json");
-    const pkgJson = JSON.parse(await pkg.text());
+    const pkgText = await readFile(new URL("../package.json", import.meta.url), "utf8");
+    const pkgJson = JSON.parse(pkgText);
     console.log(`webdoc-agent v${pkgJson.version}`);
   } catch {
     console.log("webdoc-agent v0.1.0");
@@ -276,7 +276,7 @@ async function runAgent(
         status: "thinking",
         message: "Generating API documentation...",
       });
-      const markdown = await gemini.generateApiDocumentation(calls, url);
+      const markdown = exportCallsToMarkdown(calls, url);
       agent.emit({ type: "llm_status", status: "idle" });
 
       const apiHost = getPrimaryHost(calls) || new URL(url).hostname;
@@ -922,7 +922,9 @@ async function runAgent(
       process.exit(0);
     });
   } catch (error) {
-    agent.emit({ type: "info", message: `Error: ${error}` });
+    const message = error instanceof Error ? error.message : String(error);
+    agent.emit({ type: "info", message: `Error: ${message}` });
+    console.error(`WebDoc Agent error: ${message}`);
     if (browser) {
       await browser.close();
     }

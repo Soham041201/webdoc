@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "description": "Human-in-the-loop API documentation agent for web applications",
   "type": "module",
-  "main": "src/index.tsx",
+  "main": "dist/index.js",
   "bin": {
-    "webdoc": "./src/index.tsx"
+    "webdoc": "./dist/index.js"
   },
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
-    "build": "bun build src/index.tsx --outdir dist --target bun",
+    "build": "rm -rf dist && tsc --outDir dist",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run typecheck"
+    "prepublishOnly": "bun run typecheck && bun run build"
   },
   "keywords": [
     "api-documentation",
@@ -25,7 +25,7 @@
   "author": "",
   "license": "MIT",
   "files": [
-    "src/**/*",
+    "dist/**/*",
     "README.md",
     "LICENSE"
   ],
@@ -45,8 +45,8 @@
     "react": "^18.3.1"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
     "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
     "typescript": "^5.7.2"
   }
 }

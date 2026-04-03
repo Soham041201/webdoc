@@ -3,6 +3,8 @@
  */
 
 import type { Flow } from "../agent/FlowTracker.js";
+import { analyzeCapturedCalls, type EndpointGroup, type SchemaNode } from "../analysis/index.js";
+import type { CapturedCall } from "../browser/networkRecorder.js";
 
 export function exportToMarkdown(flows: Flow[]): string {
   const sections: string[] = [];
@@ -39,4 +41,115 @@ export function exportToMarkdown(flows: Flow[]): string {
   }
 
   return sections.join("");
+}
+
+export function exportCallsToMarkdown(calls: CapturedCall[], baseUrl: string): string {
+  const analysis = analyzeCapturedCalls(calls);
+  const lines: string[] = [];
+
+  lines.push("# API Documentation");
+  lines.push("");
+  lines.push(`Source: ${baseUrl}`);
+  lines.push(`Observed calls: ${analysis.stats.totalCalls}`);
+  lines.push(`Grouped endpoints: ${analysis.stats.uniqueEndpoints}`);
+  lines.push("");
+
+  if (analysis.securitySignals.length > 0) {
+    lines.push("## Security Signals");
+    lines.push("");
+    for (const signal of analysis.securitySignals) {
+      lines.push(`- **${signal.kind}** \`${signal.name}\` — ${signal.description} (${signal.severity})`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Endpoints");
+  lines.push("");
+
+  for (const endpoint of analysis.endpoints) {
+    appendEndpoint(lines, endpoint);
+  }
+
+  return lines.join("\n");
+}
+
+function appendEndpoint(lines: string[], endpoint: EndpointGroup): void {
+  lines.push(`### ${endpoint.method} ${endpoint.displayPath}`);
+  lines.push("");
+  lines.push(`- **Operation:** ${endpoint.operationName}`);
+  lines.push(`- **Resource group:** ${endpoint.resourceGroup}`);
+  lines.push(`- **Observed calls:** ${endpoint.observedCalls}`);
+  lines.push(`- **Statuses:** ${endpoint.statuses.join(", ") || "none"}`);
+  lines.push(`- **Classification:** ${endpoint.classifications.dataType} / ${endpoint.classifications.interactionType}`);
+
+  if (endpoint.workflowBindings.length > 0) {
+    const contexts = endpoint.workflowBindings
+      .map((binding) => binding.pageName || binding.triggerLabel || binding.flowName)
+      .filter(Boolean);
+    if (contexts.length > 0) {
+      lines.push(`- **Workflow context:** ${contexts.join(", ")}`);
+    }
+  }
+
+  if (endpoint.queryParams.length > 0) {
+    lines.push("- **Query params:**");
+    for (const param of endpoint.queryParams) {
+      lines.push(
+        `  - \`${param.name}\` (${param.inferredType})${param.values[0] ? ` example: ${param.values[0]}` : ""}`,
+      );
+    }
+  }
+
+  if (endpoint.requestHeaders.length > 0) {
+    lines.push("- **Request headers:**");
+    for (const header of endpoint.requestHeaders) {
+      lines.push(`  - \`${header.name}\`${header.sensitive ? " (sensitive)" : ""}`);
+    }
+  }
+
+  if (endpoint.requestSchema) {
+    lines.push("- **Request schema:**");
+    lines.push("```json");
+    lines.push(JSON.stringify(schemaNodeToShape(endpoint.requestSchema), null, 2));
+    lines.push("```");
+  }
+
+  if (endpoint.responseSchema) {
+    lines.push("- **Response schema:**");
+    lines.push("```json");
+    lines.push(JSON.stringify(schemaNodeToShape(endpoint.responseSchema), null, 2));
+    lines.push("```");
+  }
+
+  if (endpoint.securitySignals.length > 0) {
+    lines.push("- **Security signals:**");
+    for (const signal of endpoint.securitySignals) {
+      lines.push(`  - ${signal.kind}: ${signal.name} (${signal.severity})`);
+    }
+  }
+
+  lines.push("");
+}
+
+function schemaNodeToShape(node: SchemaNode): any {
+  switch (node.kind) {
+    case "object":
+      return Object.fromEntries(
+        Object.entries(node.properties || {}).map(([key, value]) => [key, schemaNodeToShape(value)]),
+      );
+    case "array":
+      return [node.items ? schemaNodeToShape(node.items) : "unknown"];
+    case "string":
+      return node.formats && node.formats.length > 0 ? `string<${node.formats[0]}>` : "string";
+    case "integer":
+      return "integer";
+    case "number":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "null":
+      return "null";
+    default:
+      return "unknown";
+  }
 }
