@@ -2,9 +2,9 @@
  * Playwright browser integration
  */
 
-import { chromium, type Browser, type Page, type BrowserContext } from "playwright";
-import type { Agent } from "../agent/Agent.js";
-import { NetworkRecorder, type CapturedCall } from "./networkRecorder.js";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { Agent } from "../agent/Agent.js";
+import { NetworkRecorder } from "./networkRecorder.js";
 import { UIObserver } from "./uiObserver.js";
 
 export class BrowserController {
@@ -21,8 +21,11 @@ export class BrowserController {
 
   async launch(): Promise<void> {
     this.browser = await chromium.launch({
-      headless: false,
-      slowMo: 100, // Slow down for observability
+      headless: process.env.HEADLESS !== "false",
+      slowMo: process.env.HEADLESS === "false" ? 100 : 0,
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
     });
 
     this.context = await this.browser.newContext({
@@ -44,14 +47,60 @@ export class BrowserController {
     if (!this.page) {
       throw new Error("Browser not launched");
     }
-    await this.page.goto(url, { waitUntil: "networkidle" });
+
+    const response = await this.page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    try {
+      await this.page.waitForLoadState("load", { timeout: 10000 });
+    } catch {
+      // Some modern sites never reach a clean load state quickly.
+    }
+
+    try {
+      await this.page.waitForLoadState("networkidle", { timeout: 5000 });
+    } catch {
+      // Do not fail startup on noisy/polling/challenge pages.
+    }
+
+    const finalUrl = this.page.url();
+    const title = await this.page.title().catch(() => "");
+    const bodyText = await this.page
+      .locator("body")
+      .innerText({ timeout: 3000 })
+      .then((value) => value.slice(0, 500))
+      .catch(() => "");
+
+    if (looksLikeChallengePage(finalUrl, title, bodyText)) {
+      this.agent.emit({
+        type: "info",
+        message:
+          "Detected a verification/interstitial page. The browser is open so you can complete it manually, then continue.",
+      });
+    }
+
+    if (response && !response.ok() && response.status() >= 400) {
+      this.agent.emit({
+        type: "info",
+        message: `Initial navigation returned HTTP ${response.status()} for ${finalUrl}.`,
+      });
+    }
   }
 
   async navigateSoft(url: string): Promise<void> {
     if (!this.page) {
       throw new Error("Browser not launched");
     }
+
     await this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+
+    try {
+      await this.page.waitForLoadState("load", { timeout: 5000 });
+    } catch {
+      // Soft navigation should stay resilient.
+    }
   }
 
   async takeScreenshot(): Promise<Buffer> {
@@ -493,4 +542,16 @@ export class BrowserController {
     }
     return `https://${trimmed}`;
   }
+}
+
+function looksLikeChallengePage(url: string, title: string, bodyText: string): boolean {
+  const combined = `${url}\n${title}\n${bodyText}`.toLowerCase();
+  return (
+    combined.includes("cloudflare") ||
+    combined.includes("verify you are human") ||
+    combined.includes("security check") ||
+    combined.includes("attention required") ||
+    combined.includes("captcha") ||
+    combined.includes("checking your browser")
+  );
 }

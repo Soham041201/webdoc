@@ -1,9 +1,9 @@
+
 /**
- * Records network requests and responses
+ * Records network requests and responses using Puppeteer
  */
 
-import type { Page, Request, Response } from "playwright";
-import type { Agent } from "../agent/Agent.js";
+import type { Page, HTTPRequest as Request, HTTPResponse as Response } from "puppeteer";
 
 export interface CapturedCall {
   method: string;
@@ -26,7 +26,7 @@ interface RequestInfo {
 }
 
 export class NetworkRecorder {
-  private agent: Agent;
+  private agent: any;
   private page: Page;
   private requests: Map<Request, RequestInfo> = new Map();
   private captureActive = false;
@@ -35,14 +35,14 @@ export class NetworkRecorder {
   private capturedCalls: CapturedCall[] = [];
   private onCapture?: (call: CapturedCall) => void;
 
-  constructor(agent: Agent, page: Page) {
+  constructor(agent: any, page: Page) {
     this.agent = agent;
     this.page = page;
   }
 
   async start(): Promise<void> {
     // Record requests
-    this.page.on("request", async (request) => {
+    this.page.on("request", (request) => {
       this.requests.set(request, {
         method: request.method(),
         url: request.url(),
@@ -62,7 +62,9 @@ export class NetworkRecorder {
       const method = info?.method || request.method() || "GET";
 
       // Handle network call through agent (for approval if needed)
-      await this.agent.handleNetworkCall(method, url, status);
+      if (this.agent && typeof this.agent.handleNetworkCall === "function") {
+        await this.agent.handleNetworkCall(method, url, status);
+      }
 
       if (!this.captureActive || !info) {
         return;
@@ -72,6 +74,13 @@ export class NetworkRecorder {
         return;
       }
 
+      let responseBody: string | undefined;
+      try {
+        responseBody = await this.safeResponseBody(response);
+      } catch (e) {
+        // Body might not be available or already consumed
+      }
+
       const call: CapturedCall = {
         method,
         url,
@@ -79,7 +88,7 @@ export class NetworkRecorder {
         requestHeaders: info.headers,
         responseHeaders: response.headers(),
         requestBody: this.truncate(info.postData || undefined),
-        responseBody: await this.safeResponseBody(response),
+        responseBody: responseBody,
         timestamp: Date.now(),
       };
 
@@ -113,10 +122,6 @@ export class NetworkRecorder {
     this.onCapture = listener;
   }
 
-  getRequests(): RequestInfo[] {
-    return Array.from(this.requests.values());
-  }
-
   private shouldCapture(info: RequestInfo, response: Response): boolean {
     const resourceType = info.resourceType;
     if (resourceType !== "xhr" && resourceType !== "fetch") {
@@ -124,8 +129,12 @@ export class NetworkRecorder {
     }
 
     if (!this.includeThirdParty && this.captureBaseDomain) {
-      const host = new URL(info.url).hostname;
-      if (!this.isSameSite(host, this.captureBaseDomain)) {
+      try {
+        const host = new URL(info.url).hostname;
+        if (!this.isSameSite(host, this.captureBaseDomain)) {
+          return false;
+        }
+      } catch {
         return false;
       }
     }
@@ -154,10 +163,14 @@ export class NetworkRecorder {
   }
 
   private getBaseDomain(url: string): string {
-    const host = new URL(url).hostname;
-    const parts = host.split(".").filter(Boolean);
-    if (parts.length <= 2) return host;
-    return parts.slice(-2).join(".");
+    try {
+      const host = new URL(url).hostname;
+      const parts = host.split(".").filter(Boolean);
+      if (parts.length <= 2) return host;
+      return parts.slice(-2).join(".");
+    } catch {
+      return url;
+    }
   }
 
   private isSameSite(host: string, baseDomain: string): boolean {

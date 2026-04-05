@@ -4,16 +4,18 @@
  * WebDoc Agent CLI Entry Point
  */
 
+process.env.PLAYWRIGHT_SKIP_BROWSER_GC = "1";
+
 import React from "react";
 import { render } from "ink";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve, isAbsolute } from "node:path";
 import { Agent } from "./agent/Agent.js";
 import type { AgentEvent } from "./agent/Events.js";
-import { BrowserController } from "./browser/playwright.js";
+import { BrowserController } from "./browser/puppeteer.js";
 import type { CapturedCall } from "./browser/networkRecorder.js";
 import { App } from "./cli/App.js";
-import { exportToMarkdown } from "./export/markdown.js";
+import { exportCallsToMarkdown, exportToMarkdown } from "./export/markdown.js";
 import { exportCallsToOpenAPI, type DocMetadata } from "./export/openapi.js";
 import { GeminiClient } from "./llm/gemini.js";
 
@@ -57,8 +59,8 @@ For more information, visit: https://github.com/Soham041201/webdoc
 async function showVersion() {
   // Bun can read package.json directly
   try {
-    const pkg = Bun.file("package.json");
-    const pkgJson = JSON.parse(await pkg.text());
+    const pkgText = await readFile(new URL("../package.json", import.meta.url), "utf8");
+    const pkgJson = JSON.parse(pkgText);
     console.log(`webdoc-agent v${pkgJson.version}`);
   } catch {
     console.log("webdoc-agent v0.1.0");
@@ -195,11 +197,26 @@ async function main() {
   }
 }
 
+function canUseInteractiveCli(): boolean {
+  return Boolean(process.stdin.isTTY && typeof process.stdin.setRawMode === "function");
+}
+
 async function startCLI(agent: Agent, initialEvents: AgentEvent[]) {
+  if (process.env.AUTO_EXPLORE === "true") return;
+  if (!canUseInteractiveCli()) {
+    for (const event of initialEvents) {
+      if (event.type === "info") {
+        console.log(`[info] ${event.message}`);
+      }
+    }
+    console.log("[info] Interactive CLI disabled: stdin is not a raw TTY. Browser/capture can still run, but prompts will not be interactive.");
+    return;
+  }
+
   render(<App agent={agent} initialEvents={initialEvents} />);
 }
 
-async function runAgent(
+export async function runAgent(
   agent: Agent,
   url: string,
   docsPath: string = resolve(process.cwd(), "docs"),
@@ -221,9 +238,10 @@ async function runAgent(
     // Initialize Gemini client
     const gemini = new GeminiClient();
 
+    console.log("[DEBUG] Getting welcome message...");
     const welcomeMessage = await gemini.getWelcomeMessage();
-    const initialEvents: AgentEvent[] = [
-      { type: "info", message: "WebDoc Agent started" },
+    console.log("[DEBUG] Welcome message received.");
+    const initialEvents: AgentEvent[] = [      { type: "info", message: "WebDoc Agent started" },
       { type: "info", message: "Press Ctrl+C to quit" },
       { type: "info", message: `LLM welcome: ${welcomeMessage}` },
     ];
@@ -233,13 +251,26 @@ async function runAgent(
     browser = new BrowserController(agent);
     await browser.launch();
 
-    // Navigate to URL
-    agent.emit({ type: "info", message: `Navigating to ${url}...` });
-    await browser.navigate(url);
+    if (process.env.AUTO_EXPLORE === "true") {
+      agent.onEvent(async (event) => {
+        if (event.type === "approval_required") {
+          setTimeout(() => agent.resolveApproval("yes"), 0);
+        } else if (event.type === "action_suggestion") {
+          setTimeout(() => agent.resolveActionDecision("yes"), 0);
+        } else if (event.type === "next_steps") {
+          setTimeout(() => agent.resolveNextSteps("yes"), 0);
+        }
+      });
+    }
 
-    // Start CLI
+    // Start CLI before navigation so the user can intervene early.
     startCLI(agent, initialEvents);
 
+    // Navigate to URL
+    console.log(`[DEBUG] Navigating to ${url}...`);
+    agent.emit({ type: "info", message: `Navigating to ${url}...` });
+    await browser.navigate(url);
+    console.log("[DEBUG] Navigation finished.");
     const scheduleCaptureFinalize = () => {
       if (exploring) return;
       if (captureTimer) {
@@ -276,7 +307,7 @@ async function runAgent(
         status: "thinking",
         message: "Generating API documentation...",
       });
-      const markdown = await gemini.generateApiDocumentation(calls, url);
+      const markdown = exportCallsToMarkdown(calls, url);
       agent.emit({ type: "llm_status", status: "idle" });
 
       const apiHost = getPrimaryHost(calls) || new URL(url).hostname;
@@ -404,10 +435,12 @@ async function runAgent(
     };
 
     const startCaptureSession = () => {
+      console.log("[DEBUG] startCaptureSession starting...");
       if (captureActive || !browser) return;
       captureActive = true;
       browser.startCapture(url);
       browser.setCaptureListener(onCapturedCall);
+      console.log("[DEBUG] startCaptureSession finished.");
     };
 
     const isUnsafeLabel = (label: string) =>
@@ -910,6 +943,16 @@ async function runAgent(
       }
     })();
 
+    if (process.env.AUTO_EXPLORE === "true") {
+      console.log("[DEBUG] AUTO_EXPLORE block triggered.");
+      agent.emit({ type: "info", message: "AUTO_EXPLORE enabled. Starting exploration..." });
+      startCaptureSession();
+      await exploreVisiblePages();
+      await finalizeCapture("Auto exploration complete.");
+      if (browser) await browser.close();
+      process.exit(0);
+    }
+
     // Keep running until user quits
     process.on("SIGINT", async () => {
       if (captureActive) {
@@ -922,7 +965,9 @@ async function runAgent(
       process.exit(0);
     });
   } catch (error) {
-    agent.emit({ type: "info", message: `Error: ${error}` });
+    const message = error instanceof Error ? error.message : String(error);
+    agent.emit({ type: "info", message: `Error: ${message}` });
+    console.error(`WebDoc Agent error: ${message}`);
     if (browser) {
       await browser.close();
     }
@@ -930,7 +975,9 @@ async function runAgent(
   }
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+if (import.meta.main || (typeof process !== "undefined" && process.argv[1] && (process.argv[1].endsWith("index.tsx") || process.argv[1].endsWith("index.ts")))) {
+  main().catch((error) => {
+    console.error("Fatal error:", error);
+    process.exit(1);
+  });
+}

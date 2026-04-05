@@ -1,23 +1,22 @@
+
 /**
- * Observes UI interactions and captures screenshots
+ * Observes UI interactions and captures screenshots using Puppeteer
  */
 
-import type { Page } from "playwright";
-import type { Agent } from "../agent/Agent.js";
+import type { Page } from "puppeteer";
 
 export class UIObserver {
-  private agent: Agent;
+  private agent: any;
   private page: Page;
-  private clickListeners: (() => void)[] = [];
 
-  constructor(agent: Agent, page: Page) {
+  constructor(agent: any, page: Page) {
     this.agent = agent;
     this.page = page;
   }
 
   async start(): Promise<void> {
     // Inject click listener to track UI interactions
-    await this.page.evaluate(() => {
+    await this.page.evaluateOnNewDocument(() => {
       document.addEventListener("click", (e) => {
         const target = e.target as HTMLElement;
         if (target) {
@@ -31,15 +30,11 @@ export class UIObserver {
         }
       }, true);
     });
-
-    // Note: Click tracking is handled via the injected listener above.
-    // The click info is stored in window.__lastClick and can be retrieved
-    // via page.evaluate() when needed.
   }
 
-
   async captureScreenshot(): Promise<Buffer> {
-    return await this.page.screenshot({ fullPage: true });
+    const screenshot = await this.page.screenshot({ fullPage: true });
+    return Buffer.from(screenshot);
   }
 
   async stop(): Promise<void> {
