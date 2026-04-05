@@ -23,7 +23,7 @@ async function testWebsite(url: string, testName: string) {
       setTimeout(() => agent.resolveActionDecision("yes"), 0);
     } else if (event.type === "next_steps") {
        console.log(`[Auto-Approving Next Steps] ${event.question}`);
-       setTimeout(() => agent.resolveNextSteps("yes"), 0);
+       setTimeout(() => agent.resolveNextSteps("actions"), 0);
     } else if (event.type === "info") {
       console.log(`[info] ${event.message}`);
     } else if (event.type === "llm_status") {

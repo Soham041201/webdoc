@@ -258,7 +258,7 @@ export async function runAgent(
         } else if (event.type === "action_suggestion") {
           setTimeout(() => agent.resolveActionDecision("yes"), 0);
         } else if (event.type === "next_steps") {
-          setTimeout(() => agent.resolveNextSteps("yes"), 0);
+          setTimeout(() => agent.resolveNextSteps("actions"), 0);
         }
       });
     }

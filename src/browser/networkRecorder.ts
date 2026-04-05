@@ -1,9 +1,9 @@
 
 /**
- * Records network requests and responses using Puppeteer
+ * Records network requests and responses
  */
 
-import type { Page, HTTPRequest as Request, HTTPResponse as Response } from "puppeteer";
+import type { HTTPRequest as Request, HTTPResponse as Response } from "puppeteer";
 
 export interface CapturedCall {
   method: string;
@@ -27,22 +27,22 @@ interface RequestInfo {
 
 export class NetworkRecorder {
   private agent: any;
-  private page: Page;
-  private requests: Map<Request, RequestInfo> = new Map();
+  private page: any;
+  private requests: Map<any, RequestInfo> = new Map();
   private captureActive = false;
   private captureBaseDomain: string | null = null;
   private includeThirdParty = false;
   private capturedCalls: CapturedCall[] = [];
   private onCapture?: (call: CapturedCall) => void;
 
-  constructor(agent: any, page: Page) {
+  constructor(agent: any, page: any) {
     this.agent = agent;
     this.page = page;
   }
 
   async start(): Promise<void> {
     // Record requests
-    this.page.on("request", (request) => {
+    this.page.on("request", (request: any) => {
       this.requests.set(request, {
         method: request.method(),
         url: request.url(),
@@ -54,7 +54,7 @@ export class NetworkRecorder {
     });
 
     // Record responses and emit events
-    this.page.on("response", async (response) => {
+    this.page.on("response", async (response: any) => {
       const request = response.request();
       const info = this.requests.get(request);
       const url = response.url();

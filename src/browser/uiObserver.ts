@@ -3,13 +3,11 @@
  * Observes UI interactions and captures screenshots using Puppeteer
  */
 
-import type { Page } from "puppeteer";
-
 export class UIObserver {
   private agent: any;
-  private page: Page;
+  private page: any;
 
-  constructor(agent: any, page: Page) {
+  constructor(agent: any, page: any) {
     this.agent = agent;
     this.page = page;
   }

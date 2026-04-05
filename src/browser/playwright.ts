@@ -5,6 +5,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { Agent } from "../agent/Agent.js";
 import { NetworkRecorder } from "./networkRecorder.js";
+import type { CapturedCall } from "./networkRecorder.js";
 import { UIObserver } from "./uiObserver.js";
 import { getScreenSize } from "./screen.js";
 
