@@ -3,6 +3,7 @@ import puppeteer, { Browser, Page, HTTPResponse, Target } from "puppeteer";
 import { Agent } from "../agent/Agent.js";
 import { NetworkRecorder } from "./networkRecorder.js";
 import { UIObserver } from "./uiObserver.js";
+import { getScreenSize } from "./screen.js";
 
 export class BrowserController {
   private browser: Browser | null = null;
@@ -18,8 +19,8 @@ export class BrowserController {
   async launch(): Promise<void> {
     console.log("[DEBUG] PuppeteerController.launch starting...");
     this.browser = await puppeteer.launch({
-      headless: process.env.HEADLESS !== "false",
-      slowMo: process.env.HEADLESS === "false" ? 100 : 0,
+      headless: false,
+      slowMo: 100,
       args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
     console.log("[DEBUG] puppeteer.launch returned.");
@@ -28,7 +29,8 @@ export class BrowserController {
     const pages = await this.browser.pages();
     console.log(`[DEBUG] Found ${pages.length} pages.`);
     this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
-    await this.page.setViewport({ width: 1280, height: 720 });
+    const screenSize = getScreenSize();
+    await this.page.setViewport({ width: screenSize.width, height: screenSize.height });
     console.log("[DEBUG] Page initialized.");
 
     // Set up network recording

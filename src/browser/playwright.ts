@@ -6,6 +6,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { Agent } from "../agent/Agent.js";
 import { NetworkRecorder } from "./networkRecorder.js";
 import { UIObserver } from "./uiObserver.js";
+import { getScreenSize } from "./screen.js";
 
 export class BrowserController {
   private browser: Browser | null = null;
@@ -21,15 +22,16 @@ export class BrowserController {
 
   async launch(): Promise<void> {
     this.browser = await chromium.launch({
-      headless: process.env.HEADLESS !== "false",
-      slowMo: process.env.HEADLESS === "false" ? 100 : 0,
+      headless: false,
+      slowMo: 100,
       handleSIGINT: false,
       handleSIGTERM: false,
       handleSIGHUP: false,
     });
 
+    const screenSize = getScreenSize();
     this.context = await this.browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      viewport: { width: screenSize.width, height: screenSize.height },
     });
 
     this.page = await this.context.newPage();
